@@ -1,0 +1,294 @@
+#!/bin/bash
+#
+# Gary A. Donahue 2014
+#
+# This is the master script for the CPU-Hist tool that displays a 
+# histogram of CPU utilization. This was written for Arista CLI, 
+# but will work on most flavors of Linux. 
+# 
+# Get command, if there is one
+set -e
+COMMAND=${1-none}
+PROGDIR="/opt/CPU-Hist/bin"
+DATADIR="/opt/CPU-Hist/data"
+
+if [[ -e /etc/Eos-release ]]; then
+   EOS='yes' 
+else
+   EOS='no'
+fi
+
+# Data Dir is in /opt/CPU-Hist/ in order to keep from constantly writing
+#      to the flash drive. The files don't take up much space, but they
+#      get altered every second, so best not to increment SSD or Flash 
+#      writes.
+
+case "$COMMAND" in
+   sec | -s )
+      # Plot Seconds Graph Only
+      $PROGDIR/Plot-Sec.sh
+      exit
+      ;;
+
+   high )
+      # Plot high-res 120-Second Graph Only
+      $PROGDIR/Plot-Sec-120.sh
+      exit
+      ;;
+
+   min | -m )
+      # Plot Minutes Graph Only
+      $PROGDIR/Plot-Min.sh
+      exit
+      ;;
+
+   hrs | -h )
+      # Plot Hrs Graph Only
+      $PROGDIR/Plot-Hrs.sh
+      exit
+      ;;
+
+   week | -w )
+      # Plot Hrs Graph Only
+      $PROGDIR/Plot-Week.sh
+      exit
+      ;;
+
+   all | -a )
+      # Plot All Graphs Squashed
+      $PROGDIR/Plot-Sec.sh 70 15
+      $PROGDIR/Plot-Min.sh 70 15
+      $PROGDIR/Plot-Hrs.sh 70 15
+      echo "                      [ ### = Average ][ . = Peak ]"
+      exit
+      ;;
+
+   rawsec )
+      echo
+      echo 'Raw Second log data (rotates every minute)'
+      echo
+      echo 'Date     Time     : Util%'
+      echo '--------------------------------' 
+      tail -n60 $DATADIR/CPU-Hist-Sec.txt | awk '{print strftime("%D %T", $1), "|", $2}' 
+      ;;
+
+   rawmin )
+      echo
+      echo 'Raw Minute log data (rotates every hour)'
+      echo
+      echo 'Date     Time     | Ave  | Peak'
+      echo '--------------------------------' 
+      tail -n60 $DATADIR/CPU-Hist-Min.txt | \
+           awk '{print strftime("%D %T", $1), "|" , $2 , "| " $3  } ' 
+      ;;
+
+   rawhrs )
+      echo
+      echo 'Raw Hours log data (rotates every week)'
+      echo
+      echo 'Date     Time     | Ave  | Peak'
+      echo '--------------------------------'
+      tail -n170 $DATADIR/CPU-Hist-Hrs.txt | \
+           awk '{print strftime("%D %T", $1), "|" , $2 , "| " $3  } '
+      ;;
+
+   start )
+      # Start all of the collection daemons
+
+      # If the system is EOS, then the EOS immortalize command will be used to 
+      # start these scripts. This will add the benefit of automatically restarting
+      # the scripts should they die. Note that kill or kill -9 will not 
+      # result in a restart (as per immortalize code).
+
+      echo
+
+      # Try to start Second Logger
+      SECPIDFILE="$DATADIR/CPU-Sec.pid"
+      if [[ -e $SECPIDFILE ]]; then
+         echo "CPU Second Logger is already running - bypassing."
+      else
+         if [[ $EOS == "yes" ]]; then
+            echo -n "Immortalizing CPU Second Logger..."
+            immortalize --daemonize $PROGDIR/CPU-Sec.sh &>> $DATADIR/CPU-Hist-Daemons.log 
+            echo "Done."
+         else
+            echo -n "Starting CPU Second Logger..."
+            nohup $PROGDIR/CPU-Sec.sh &>> $DATADIR/CPU-Hist-Daemons.log &
+            echo "Done."
+         fi
+      fi
+
+      # Try to start Minute Logger
+      MINPIDFILE="$DATADIR/CPU-Min.pid"
+      if [[ -e $MINPIDFILE ]]; then
+         echo "CPU Minute Logger is already running - bypassing."
+      else
+         if [[ $EOS == "yes" ]]; then
+            echo -n "Immortalizing CPU Minute Logger..."
+            immortalize --daemonize $PROGDIR/CPU-Min.sh &>> $DATADIR/CPU-Hist-Daemons.log 
+            echo "Done."
+         else
+            echo -n "Starting CPU Minute Logger..."
+            nohup $PROGDIR/CPU-Min.sh &>> $DATADIR/CPU-Hist-Daemons.log &
+            echo "Done."
+         fi
+      fi
+
+      # Try to start Hours Logger
+      HRSPIDFILE="$DATADIR/CPU-Hrs.pid"
+      if [[ -e $HRSPIDFILE ]]; then
+         echo "CPU Hours Logger is already running - bypassing."
+      else
+         if [[ $EOS == "yes" ]]; then
+            echo -n "Immortalizing CPU Hour Logger..."
+            immortalize --daemonize $PROGDIR/CPU-Hrs.sh &>> $DATADIR/CPU-Hist-Daemons.log 
+            echo "Done."
+         else
+            echo -n "Starting CPU Hour Logger....."
+            nohup $PROGDIR/CPU-Hrs.sh &>> $DATADIR/CPU-Hist-Daemons.log &
+            echo "Done."
+         fi
+      fi
+      echo
+      echo "Logfile for these daemons is $DATADIR/CPU-Hist-Daemons.log"
+      echo 
+      ;;
+
+   stop )
+      # Stop all of the collection daemons
+      echo
+      echo 'NOTE: If you get a permissions error, use sudo.'
+      echo
+      SECPIDFILE="$DATADIR/CPU-Sec.pid"
+      if [ -e $SECPIDFILE ];
+      then
+         SECPID=( $(<$SECPIDFILE) )
+         echo -n "Killing Sec-CPU pid: " $SECPID "... "
+         kill $SECPID
+         RETVAL=$?
+         [ $RETVAL -eq 0 ] && echo "Done"
+         [ $RETVAL -eq 1 ] && echo "Failed"
+      else
+         echo "$SECPIDFILE file not found."
+      fi         
+
+      MINPIDFILE="$DATADIR/CPU-Min.pid"
+      if [ -e $MINPIDFILE ];
+      then
+         MINPID=( $(<$MINPIDFILE) )
+         echo -n "Killing Min-CPU pid: " $MINPID "... "
+         kill $MINPID
+         RETVAL=$?
+         [ $RETVAL -eq 0 ] && echo "Done"
+         [ $RETVAL -eq 1 ] && echo "Failed"
+      else
+         echo "$MINPIDFILE file not found."
+       fi
+
+      HRSPIDFILE="$DATADIR/CPU-Hrs.pid"
+      if [ -e $HRSPIDFILE ];
+      then 
+         HRSPID=( $(<$HRSPIDFILE) )
+         echo -n "Killing Hrs-CPU pid: " $HRSPID "... "
+         kill $HRSPID
+         RETVAL=$?
+         [ $RETVAL -eq 0 ] && echo "Done"
+         [ $RETVAL -eq 1 ] && echo "Failed"
+      else
+         echo "$HRSPIDFILE file not found."
+      fi
+      ;;
+
+   install | --install )
+    
+      # This installs CLI commands and /usr/bin/local symbolic link
+      # as well as web page directory
+
+      echo
+      if [[ -L "/usr/local/bin/cpuhist" ]]; then
+         echo "cpuhist link already in place - bypassing."
+      else
+         echo -n "Installing /usr/local/bin alias for cpuhist..."
+         sudo ln -sf $PROGDIR/cpuhist /usr/local/bin/cpuhist
+         echo "Done."
+      fi
+      if [[ -e "/etc/Eos-release" ]]; then
+         echo
+         echo "EOS Detected!"
+         echo
+         echo "Installing CLI Alias for cpuhist <command>"
+         echo "Installing Event-Handler to start cpuhist on boot"
+         echo "Configuration will be saved."
+         echo
+         echo "NOTE: If prompted for a password, enter your enable password."
+         echo
+         /usr/bin/FastCli -c "enable
+            configure 
+            alias cpuhist bash cpuhist %1
+            event-handler CPU-Hist
+               trigger on-boot
+               action bash cpuhist start
+               exit
+            write"
+         echo "Done!"
+         echo 
+         echo -n "Creating CPU-Hist nginx directory... "
+         sudo mkdir /usr/share/nginx/html/apps/CPU-Hist/
+         echo "Done!"
+         echo -n "Writing index.html for nginx... "
+         sudo cp /opt/CPU-Hist/bin/index.html /usr/share/nginx/html/apps/CPU-Hist/
+         echo "Done!"
+         fi
+      echo
+      ;;
+
+   readme )
+      more $PROGDIR/readme
+      ;;
+
+   * | help | --help )
+      # Help output
+      echo
+      echo 'cpuhist - a means whereby histograms of the historical CPU data'
+      echo '          may be displayed.'
+      echo
+      echo "Usage Examples: "
+      echo
+      echo '   cpuhist [-a|all]           Print Sec, Min, & Hrs graphs, slightly '
+      echo '                              squashed to fit on the screen.'
+      echo
+      echo '   cpuhist [-s|-m|-h|-w]      Graph "Seconds", "Minutes", "Hours", etc.'
+      echo '   cpuhist [sec|min|hrs|week] Graph "Seconds", "Minutes", "Hours", etc.'
+      echo
+      echo '   cpuhist high               High-resolution graph of the last two minutes.'
+      echo
+      echo '   cpuhist rawsec             Display last 60 lines of the Seconds log file.' 
+      echo '   cpuhist rawmin             Display last 60 lines of the Minutes log file.' 
+      echo '   cpuhist rawhrs             Display last 180 lines of the Hours log file.' 
+      echo
+      echo '   cpuhist start              Start all of the collection daemons.'
+      echo '                              You should probably never need to do this.' 
+      echo 
+      echo '   cpuhist stop               Stop all of the collection daemons'
+      echo '                              You should probably never need to do this.' 
+      echo
+      echo '   cpuhist install            Install CLI command and Event-Handler boot event.'
+      echo '                              This is done automatically when installing.'   
+      echo   
+      echo '   cpuhist [--help|help]      This help message,'
+      echo
+      echo '   cpuhist readme             Display the contents of the readme file.'
+      echo
+      echo 'Note: This tool requires the CPU-Hist daemons to be running. These daemons '
+      echo '      should be started by the system if this tool was properly installed.'
+      echo
+      echo 'Note: Running this tool through watch will impact the CPU, especially'
+      echo '      when using cpuhist all, since that calls gnuplot three times.'
+      echo
+      exit
+      ;;
+
+
+
+esac
+exit 0

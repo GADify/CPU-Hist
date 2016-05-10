@@ -1,0 +1,258 @@
+CPU-Hist Readme File
+====================
+
+
+[ Description ]
+
+Author: Gary A. Donahue
+Date:   October, 2013
+Email:  gad@gad.net, gad@arista.com
+
+CPU-Hist is a tool that lets you view a histogram of CPU utilization similar
+to Cisco's "sho proc cpu hist" command. This tool was designed for Arista
+switches, though it will work on any linux distribution if GnuPlot is installed.
+With the exception of GunPlot and the EOS CLI integration, this tool uses all 
+Linux bash commands. Note that you don't *need* GnuPlot, as you can display the
+raw data with the rawsec, rawmin, and rawhrs options, but GnuPlot is much cooler.
+
+
+[ Requirements ]
+
+This tool uses GnuPlot. A .swix file is included in the distribution
+that can be installed as an extension on Arista EOS CPU-Hist will install 
+and run without GnuPlot, but you won't see the pretty graphs. 
+
+Note that as of EOS v4.15.2F, the Gnuplot-4.4.0.swix I was including is broken. 
+I've built two newer GnuPlots for EOS versions 4.15.2F and higher. For most users, 
+GnuPlot-EOS-4-15-2-min.swix will work and has the benefit of being 1/4 the size 
+of the full GnuPlot which is GnuPlot-EOS-4-15-2.swix. Either will work, but the 
+full version allows the creation of png files which is not fully included 
+in CPU-Hist 1.4. 
+
+Summary:
+
+For EOS up to 4.15.1F: Use GnuPlot-4.4.0.swix
+For EOS 4.15.2F and higher: Use GnuPlot-EOS-4-15-2-min.swix
+
+CPU-Hist-1-4.swix will work with either version of GnuPlot. It will also work 
+without GnuPlot, but you won't be able to plot graphs. 
+
+
+[ Caveats ]
+
+I make no guarantees that this script is useful, secure, or anything else for 
+that matter. Use at your own risk. 
+
+This tool does seem to have a small impact on the CPU, which is unfortunate since
+we'd probably use this tool if we were worried about the CPU utilization. This is 
+a result of using vmstat to get the idle state. Future versions may achieve this in
+a different way. Vmstat also introduces a bit of lag, so the "every second" aspect of
+CPU Utilization may actually be more like every two seconds depending on your CPU. 
+
+This tool was first built just for fun, so it wasn't intended to be any sort of 
+serious tool. Then I found myself using it every day. Funny how that happens. 
+
+The file permissions on the log files and even the executables are pretty much 
+wide open (777-kind of open), which is a bad practice. This was designed to be
+a quick and dirty script, so stuff like this may be cleaned up in the future. 
+
+
+[ Revisions ]
+
+CPU-Hist-1-1	First rpm/swix version
+CPU-Hist-1-2	Added 'immortalize' for daemons if EOS detected
+CPU-Hist-1-3	Re-wrote the CPU-Sec.sh script to gather processor util% from
+                the /proc/stat source instead of using vmstat. This has lowered
+                the overhead of this script significantly. As a result, The 
+                data will now update every second instead of every 2-3 on 
+                older versions of this tool. It also has a *much* lower effect
+                on overall CPU util. Yay!
+                Also Added a 60-second high-res graph option - cpuhist high
+CPU-Hist-1-4	Changed rawsec, rawmin, and rawhrs so that instead of only 
+   		showing the last 30 lines, they show 60, 60, and 180 (minute, 
+                hour, and week) respectively.
+
+
+[ Usage ]
+
+This tool works from bash, and if installed properly, from the EOS CLI. 
+Useful commands when installed: 
+
+   cpuhist help		A detailed help message about tool usage.
+   cpuhist all		Displays all three graphs, squashed to fit the screen.
+   cpuhist sec		Displays the past 180 seconds of CPU utilization.
+   cpuhist min		Displays the last 180 minutes of CPU utilization.
+   cpuhist hrs		Displays the last 72 hours of CPU utilization.
+
+   There are many more. Try 'cpuhist help' for a list.
+
+From bash:
+
+   [GAD@Arista ~]$ cpuhist all
+
+From EOS CLI: 
+
+   ZLab-Core# cpuhist all
+
+Useful tricks: 
+
+From bash, the watch command can provide interesting information (and it's fun
+to watch!)
+
+   [GAD@Arista ~]$ watch cpuhist sec
+
+Using watch from CLI is not recommended, as it seems to increase CPU utilization, 
+which is a bad idea since that's what we're trying to monitor. 
+
+
+[ Installation ]
+
+NOTE: If using this tool on Linux (i.e., not EOS), then you will need to install
+GnuPlot and all its requirements if you want to see graphs. 
+
+NOTE: These instructions are done from EOS CLI.
+
+1) Download the GnuPlot and CPU-Hist swix files and put them in extensions:
+
+   Arista# copy http://xxx.xxx.xxx.xxx/GnuPlot-4.4.0.swix extension:
+   Arista# wget http://xxx.xxx.xxx.xxx/CPU-Hist-1-3.swix extension:
+
+2) Install the extensions:
+
+   Arista# extension GnuPlot-4.4.0.swix
+   Arista# extension CPU-Hist-1-3.swix
+
+At this point, CPU-Hist should be collecting data, and is ready to be used. 
+
+3) Make the extensions bootable:
+
+   Arista# copy installed-extensions boot-extensions    
+
+At this point, if all went well, GNUPlot has been installed and the 
+CPU-Hist dameons will start on every reboot.
+
+
+[ File Locations ]
+
+All files are installed under /opt/CPU-Hist/
+
+Additionally, a symbolic link to /opt/CPU-Hist/bin/cpuhist is added in 
+/usr/local/bin so that the command may be used from anywhere in the file
+system. 
+
+
+[ Program Files ]
+
+All program files are installed in /opt/CPU-Hist/bin/
+
+The way this tool works is that three daemons are started. They are: 
+
+CPU-Sec.sh
+CPU-Min.sh
+CPU-Hrs.sh
+
+All of these are bash shell scripts. Only bash commands are called. There is no 
+Python or C++ involved. 
+
+The CPU-Sec.sh daemon runs the "vmstat" unix command in order to determine the 
+CPU idle from the last second. This is done once every second (more or less). 
+
+The idle information is the overall idle from all processors as reported by vmstat. 
+
+
+[ Data Files ]
+
+All information files are stored into files located in /opt/CPU-Hist/data/. 
+
+The files are: 
+
+CPU-Hist-Daemons.log		Output (if any) of Daemon scripts
+
+CPU-Hist-Hrs-Rolling.txt        Output of the CPU-Hrs.sh script (rolling)
+CPU-Hist-Hrs.txt		Output of the CPU-Hrs.sh script
+
+CPU-Hist-Min-Rolling.txt	Output of the CPU-Min.sh script (rolling)
+CPU-Hist-Min.txt		Output of the CPU-Min.sh script 
+
+CPU-Hist-Sec-Rolling.txt	Output of the CPU-Sec.sh script (rolling)
+CPU-Hist-Sec.txt		Output of the CPU-Sec.sh script
+
+Each of the daemons also creates a lock file and a pid file in this directory:
+
+CPU-Hrs.lock
+CPU-Hrs.pid
+CPU-Min.lock
+CPU-Min.pid
+CPU-Sec.lock
+CPU-Sec.pid
+
+
+[ File Contents ]
+
+The information in the CPU-Sec files looks like this: 
+
+   [GAD@Arista ~]$ more /opt/CPU-Hist/CPU-Hist-Sec.txt 
+   1413922105   12
+   1413922107   15
+   1413922109   5
+   1413922111   12
+   [--snip--]
+
+The first column is a time stamp. 
+The second column is the CPU Idle as reported by VMStat. 
+
+Notice that the timestamps don't always increment by one second. This is a 
+limitation of using vmstat, and may vary based on the CPU horsepower on your 
+switch.
+
+The information in the CPU-Min and CPU-Hrs files looks like this: 
+
+   [GAD@Arista ~]$ more /opt/CPU-Hist/CPU-Hist-Min.txt 
+   1413909545 10.7 18
+   1413909605 11.2 20
+   1413909665 11.8 20
+   1413909726 12.0 20
+   1413909786 11.4 19
+
+The first column is a timestamp. 
+The second and third columns are different based on which file you're looking at.
+The second column is an average of the previous 60 seconds or 60 minutes. 
+The third column is the peak value from the previous 60 seconds or 60 minutes. 
+
+All of these files are used by the scripts, and should not be altered. 
+
+The .pid and .lock files are created dynamically by the scripts, and should not
+be altered or removed. 
+
+
+[ File Contents - Human Readable ]
+
+You can view the last 30 lines of the data files but using the rawsec, rawmin, and
+raw hrs keywords. Like all cpuhist features, this may be done from CLI or bash. Here 
+is an example of the minutes file: 
+
+   [Arista ~]$ cpuhist rawmin
+
+   Last 30 lines of raw Minute log data
+
+   Date     Time     | Ave  | Peak
+   --------------------------------
+   10/24/14 00:52:27 | 12.6 | 23
+   10/24/14 00:52:32 | 12.8 | 23
+   10/24/14 00:53:27 | 12.6 | 23
+   10/24/14 00:53:32 | 12.5 | 23
+   10/24/14 00:54:27 | 12.6 | 21
+   10/24/14 00:54:32 | 12.7 | 21
+   10/24/14 00:55:27 | 11.7 | 25
+   10/24/14 00:55:32 | 11.7 | 25
+   10/24/14 00:56:27 | 11.7 | 22
+
+
+[ Misc ]
+
+This has been yet another GAD-Utility
+
+
+[END]
+
+
